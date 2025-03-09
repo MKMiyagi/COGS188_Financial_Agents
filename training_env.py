@@ -51,7 +51,7 @@ class StockTrainingEnv(gym.ENV):
             num_shares = action[i*2 + 1]
 
             # Buy
-            if action_type == 2 and num_shares > 0:
+            if action_type == 1 and num_shares > 0:
                 # Maxmimum amount of stock we can purchase
                 max_afford = self.balance // current_prices[ticker]
 
@@ -60,11 +60,18 @@ class StockTrainingEnv(gym.ENV):
 
                 if shares_to_buy > 0:
                     self.shares_held[ticker] += shares_to_buy
-                    self.balance
-        
+                    self.balance -= shares_to_buy * current_prices[ticker]
+            
+            # Sell
+            elif action_type = 2 and num_shares > 0:
+                shares_to_sell = min(self.shares_held[ticker, num_shares])
+                if shares_to_sell > 0:
+                    self.shares_held[ticker] -= shares_to sell
+                    self.balance += shares_to_sell * current_prices[ticker]
+            
         # Move to next step
         self.current_step += 1
-        if self.current_step > len(self.df) - 1:
+        if self.current_step >= len(self.df) - 1:
             self.done = True
         
         # Calculate reward based on portfolio value change
