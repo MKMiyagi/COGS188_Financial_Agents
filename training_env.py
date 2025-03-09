@@ -20,7 +20,7 @@ class StockTrainingEnv(gym.ENV):
         # Define an action and observation space
         # 3 Discrete actions, 0 = hold, 1 = buy, 2 = sell
         self.action_space = spaces.MultiDiscrete([3, max_shares_per_trade + 1] * self.num_stocks)
-        self.observation_space = spaces.Box(low =-np.inf, high=np.inf, shape=(self.window_size * num_stocks + 1), dtype=np.float32)
+        self.observation_space = spaces.Box(low =-np.inf, high=np.inf, shape=(self.window_size * self.num_stocks + 1), dtype=np.float32)
 
         # Ensure all variables are properly assigned
         self.reset()
@@ -28,7 +28,7 @@ class StockTrainingEnv(gym.ENV):
     def reset(self, seed=None, options=None):
         # Assign key variables
         self.balance = self.initial_balance
-        self.shares_held = {ticker: 0 for stock in self.ticker}
+        self.shares_held = {stock: 0 for stock in self.ticker}
         self.current_step = self.window_size
         self.done = False
 
@@ -56,17 +56,17 @@ class StockTrainingEnv(gym.ENV):
                 max_afford = self.balance // current_prices[ticker]
 
                 # Limit the amount of shares we can buy
-                shares_to_buy = min(_max_afford, num_shares)
+                shares_to_buy = min(max_afford, num_shares)
 
                 if shares_to_buy > 0:
                     self.shares_held[ticker] += shares_to_buy
                     self.balance -= shares_to_buy * current_prices[ticker]
             
             # Sell
-            elif action_type = 2 and num_shares > 0:
+            elif action_type == 2 and num_shares > 0:
                 shares_to_sell = min(self.shares_held[ticker, num_shares])
                 if shares_to_sell > 0:
-                    self.shares_held[ticker] -= shares_to sell
+                    self.shares_held[ticker] -= shares_to_sell
                     self.balance += shares_to_sell * current_prices[ticker]
             
         # Move to next step
