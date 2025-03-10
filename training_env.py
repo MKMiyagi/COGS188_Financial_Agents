@@ -36,12 +36,11 @@ class StockTrainingEnv(gym.Env):
         return self._get_observation(), {}
     
     def stock_split(self):
-        splits = {ticker: yf.Ticker(stock).splits for stock in self.tickers}
-
+        splits = {stock: yf.Ticker(stock).splits for stock in self.tickers}
         for stock in self.tickers:
             if self.current_step in splits[stock].index:
                 split_ratio = splits[stock].loc[self.current_step]
-                self.shares_held[ticker] *= split_ratio
+                self.shares_held[stock] *= split_ratio
     
     '''
     Take an action on each stock in tickers
@@ -60,7 +59,7 @@ class StockTrainingEnv(gym.Env):
             return self._get_observation(), 0, True, False, {}
         
         # Adjust for Stock Splits
-        self.stock_splits()
+        self.stock_split()
 
         # Find current prices of stocks
         current_prices = self.df.iloc[self.current_step]
@@ -86,7 +85,7 @@ class StockTrainingEnv(gym.Env):
                     self.balance -= shares_to_buy * current_prices[ticker]
             
             # Sell
-            elif action_type == 2 and num_shares > 0:
+            elif action_type == 2 and num_shares > 0 and self.shares_held[ticker] > 0:
                 shares_to_sell = min(self.shares_held[ticker], num_shares)
                 if shares_to_sell > 0:
                     self.shares_held[ticker] -= shares_to_sell
