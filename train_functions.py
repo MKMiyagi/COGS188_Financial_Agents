@@ -11,7 +11,6 @@ def monte_carlo_train(env, episodes=1000, gamma=0.95):
     Q = {}  # Initialize Q-table
 
     for episode in tqdm(range(episodes), desc="Monte Carlo Training", dynamic_ncols=True):
-        print('new episode')
         state, _ = env.reset()  # Reset environment for new episode
         states, actions, rewards = [], [], []
         done = False
@@ -86,18 +85,11 @@ def evaluate_agent(env, Q, model_name="Agent"):
             print(f"Taking random action on step {step}")
         else:
             # Select the action with the highest Q-value
-            print(all_possible_actions.keys())
-            action = max(all_possible_actions)
-            for key in all_possible_actions.keys():
-                print(f"{key}: {all_possible_actions[key]}")
-            print(f"Selected action: {action}, value: {all_possible_actions[action]}")
+            action = max(all_possible_actions.keys(), key=lambda a: sum(all_possible_actions[a]))
 
         next_state, reward, done, _, _ = env.step(action)
         total_reward += reward
         state = next_state
-
-        if step == 2:
-            break
 
         # Display results every 20 steps
         if step % 20 == 0:
@@ -116,7 +108,7 @@ from training_env import StockTrainingEnv
 env = StockTrainingEnv(tickers=["AAPL", "TSLA"])
 
 # # Train Monte Carlo agent
-Q_mc = monte_carlo_train(env, episodes=100)
+Q_mc = monte_carlo_train(env, episodes=2000)
 
 # # Train Q-Learning agent
 # Q_ql = q_learning_train(env, episodes=100)

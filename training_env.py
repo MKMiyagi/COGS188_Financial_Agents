@@ -14,12 +14,12 @@ class StockTrainingEnv(gym.Env):
         self.max_shares_per_trade = max_shares_per_trade
 
         # Download stock data from yfinance
-        stock_data = yf.download(tickers, start=start, end=end)
-        self.df = stock_data['Adj Close'].dropna()
+        stock_data = yf.download(tickers, start=start, end=end, auto_adjust=True, actions=True)
+        self.df = stock_data['Close'].dropna()
         self.num_stocks = len(tickers)
 
         # Store stock splits
-        self.splits = {ticker: stock_data['Stock Splits'][stock].dropna() for stock in self.tickers}
+        self.splits = {stock: stock_data['Stock Splits'][stock].dropna() for stock in tickers}
 
         # 3 Discrete actions, 0 = hold, 1 = buy, 2 = sell
         self.action_space = spaces.MultiDiscrete([3, max_shares_per_trade + 1] * self.num_stocks)
@@ -41,8 +41,8 @@ class StockTrainingEnv(gym.Env):
     
     def stock_split(self):
         for stock in self.tickers:
-            if self.current_step in splits[stock].index:
-                split_ratio = splits[stock].loc[self.current_step]
+            if self.current_step in self.splits[stock].index:
+                split_ratio = self.splits[stock].loc[self.current_step]
                 if split_ratio > 0: 
                     self.shares_held[stock] *= split_ratio
     
