@@ -6,7 +6,7 @@ from tqdm import tqdm
 ACTIONS = [0, 1, 2]
 
 # Monte Carlo Training Function
-def monte_carlo_train(env, episodes=1000, gamma=0.95):
+def monte_carlo_train(env, episodes=1000, gamma=0.95, lr=0.1):
     """ Trains a trading agent using Monte Carlo RL inside a Gym environment """
     Q = {}  # Initialize Q-table
 
@@ -29,12 +29,12 @@ def monte_carlo_train(env, episodes=1000, gamma=0.95):
         G = 0  # Return value
         for t in reversed(range(len(states))):
             G = gamma * G + rewards[t]
-            if (states[t]) not in Q:
+            if (states[t]) not in Q.keys():
                 Q[states[t]] = {}
-            if (actions[t]) not in Q[states[t]]:
-                Q[states[t]][actions[t]] = [0 for _ in range(len(env.tickers))]
+            if (actions[t]) not in Q[states[t]].keys():
+                Q[states[t]][actions[t]] = 0
 
-            Q[states[t]][actions[t]] = Q.get(states[t], {}).get(actions[t], 0) + 0.1 * (G - Q.get(states[t], {}).get(actions[t], 0))
+            Q[states[t]][actions[t]] = Q[states[t]][actions[t]] + lr * (G - Q[states[t]][actions[t]])
 
     print("Monte Carlo training complete")
     return Q  # Return trained Q-table
@@ -51,16 +51,37 @@ def q_learning_train(env, episodes=1000, alpha=0.1, gamma=0.95, epsilon=0.1):
         while not done:
             # ε-greedy policy: Explore or exploit
             if np.random.uniform(0, 1) < epsilon:
-                action = env.action_space.sample()  # Explore
+                action = env.action_space.sample()
             else:
-                action = max(ACTIONS, key=lambda a: Q.get((tuple(state), a), 0))  # Exploit
+                all_possible_actions = Q.get(tuple(state), {})
+                if len(all_possible_actions) == 0:
+                    # If the state is not in the Q-table, take a random action
+                    action = env.action_space.sample()
+                else:
+                    # Select the action with the highest Q-value
+                    action = max(all_possible_actions.keys(), key=lambda a: all_possible_actions[a])
 
             next_state, reward, done, _, _ = env.step(action)
 
-            # Q-value update using Bellman Equation
-            best_next_action = max(ACTIONS, key=lambda a: Q.get((tuple(next_state), a), 0))
-            Q[(tuple(state), tuple(action))] = Q.get((tuple(state), tuple(action)), 0) + \
-                alpha * (reward + gamma * Q.get((tuple(next_state), best_next_action), 0) - Q.get((tuple(state), tuple(action)), 0))
+            # Find best next action
+            all_possible_next_actions = Q.get(tuple(next_state), {})
+            if len(all_possible_next_actions) == 0:
+                # If the state is not in the Q-table, take a random action
+                best_next_action = env.action_space.sample()
+            else:
+                # Select the action with the highest Q-value
+                best_next_action = max(all_possible_next_actions.keys(), key=lambda a: all_possible_next_actions[a])
+
+            # Update Q-value
+            state = tuple(state)
+            next_state = tuple(next_state)
+            action = tuple(action)
+            best_next_action = tuple(best_next_action)
+            if (state) not in Q.keys():
+                Q[state] = {}
+            if (next_state) not in Q.keys():
+                Q[next_state] = {best_next_action: 0}
+            Q[state][action] = Q[state][action] + alpha * (reward + gamma * Q[next_state][best_next_action] - Q[state][action])
 
             state = next_state  # Move to next state
 
@@ -85,7 +106,7 @@ def evaluate_agent(env, Q, model_name="Agent"):
             print(f"Taking random action on step {step}")
         else:
             # Select the action with the highest Q-value
-            action = max(all_possible_actions.keys(), key=lambda a: sum(all_possible_actions[a]))
+            action = max(all_possible_actions.keys(), key=lambda a: all_possible_actions[a])
 
         next_state, reward, done, _, _ = env.step(action)
         total_reward += reward
@@ -97,24 +118,26 @@ def evaluate_agent(env, Q, model_name="Agent"):
 
         step += 1
 
+    print(f"{model_name} Results:")
+    env.render()
     print(f"{model_name} Final Portfolio Value: {total_reward:.2f}")
     return total_reward
 
 
-# # once the Gym environmentis done, you can train and test the RL agent with the following
+# once the Gym environmentis done, you can train and test the RL agent with the following
 from training_env import StockTrainingEnv 
 
-# # Create the trading environment
-env = StockTrainingEnv(tickers=["AAPL", "TSLA"])
+# Create the trading environment
+env = StockTrainingEnv(tickers=["AAPL", "TSLA", "META"], max_shares_per_trade=10)
 
-# # Train Monte Carlo agent
-Q_mc = monte_carlo_train(env, episodes=2000)
+# Train Monte Carlo agent
+Q_mc = monte_carlo_train(env, episodes=3000)
 
-# # Train Q-Learning agent
-# Q_ql = q_learning_train(env, episodes=100)
-
-# # Evaluate Monte Carlo
+# Evaluate Monte Carlo
 evaluate_agent(env, Q_mc, "Monte Carlo Agent")
 
-# # Evaluate Q-Learning
+# Train Q-Learning agent
+# Q_ql = q_learning_train(env, episodes=100)
+
+# Evaluate Q-Learning
 # evaluate_agent(env, Q_ql, "Q-Learning Agent")
