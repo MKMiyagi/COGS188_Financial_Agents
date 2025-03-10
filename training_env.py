@@ -14,8 +14,12 @@ class StockTrainingEnv(gym.Env):
         self.max_shares_per_trade = max_shares_per_trade
 
         # Download stock data from yfinance
-        self.df = yf.download(tickers, start=start, end=end)['Close'].dropna()
+        stock_data = yf.download(tickers, start=start, end=end)
+        self.df = stock_data['Adj Close'].dropna()
         self.num_stocks = len(tickers)
+
+        # Store stock splits
+        self.splits = {ticker: stock_data['Stock Splits'][stock].dropna() for stock in self.tickers}
 
         # 3 Discrete actions, 0 = hold, 1 = buy, 2 = sell
         self.action_space = spaces.MultiDiscrete([3, max_shares_per_trade + 1] * self.num_stocks)
@@ -36,11 +40,11 @@ class StockTrainingEnv(gym.Env):
         return self._get_observation(), {}
     
     def stock_split(self):
-        splits = {stock: yf.Ticker(stock).splits for stock in self.tickers}
         for stock in self.tickers:
             if self.current_step in splits[stock].index:
                 split_ratio = splits[stock].loc[self.current_step]
-                self.shares_held[stock] *= split_ratio
+                if split_ratio > 0: 
+                    self.shares_held[stock] *= split_ratio
     
     '''
     Take an action on each stock in tickers
