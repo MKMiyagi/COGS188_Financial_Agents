@@ -67,6 +67,7 @@ class StockTrainingEnv(gym.Env):
 
         # Find current prices of stocks
         current_prices = self.df.iloc[self.current_step]
+        reward = 0
 
         # Execute actions for each stock
         for i, ticker in enumerate(self.tickers):
@@ -87,6 +88,8 @@ class StockTrainingEnv(gym.Env):
                 if shares_to_buy > 0:
                     self.shares_held[ticker] += shares_to_buy
                     self.balance -= shares_to_buy * current_prices[ticker]
+                else:
+                    reward -= 5
             
             # Sell
             elif action_type == 2 and num_shares > 0 and self.shares_held[ticker] > 0:
@@ -94,6 +97,11 @@ class StockTrainingEnv(gym.Env):
                 if shares_to_sell > 0:
                     self.shares_held[ticker] -= shares_to_sell
                     self.balance += shares_to_sell * current_prices[ticker]
+                else:
+                    reward -= 10
+            
+            else:
+                reward -= 1
             
         # Move to next step
         self.current_step += 1
@@ -102,7 +110,7 @@ class StockTrainingEnv(gym.Env):
         
         # Calculate reward based on portfolio value change
         total_value = self.balance + sum(self.shares_held[stock] * current_prices[stock] for stock in self.tickers)
-        reward = total_value - self.initial_balance
+        reward += total_value - self.initial_balance
         return self._get_observation(), reward, self.done, False, {}
 
     '''
