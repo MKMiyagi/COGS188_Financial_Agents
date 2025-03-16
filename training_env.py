@@ -4,14 +4,14 @@ import yfinance as yf
 from gymnasium import spaces
 
 class StockTrainingEnv(gym.Env):
-    def __init__(self, tickers=[], start='2014-01-01', end='2024-01-01', initial_balance=10000, window_size=30, max_shares_per_trade = 5):
+    def __init__(self, tickers=[], start='2014-01-01', end='2024-01-01', initial_balance=10000, window_size=30):
         super(StockTrainingEnv, self).__init__()
 
         # Assign key variables
         self.tickers = tickers
         self.window_size = window_size
         self.initial_balance = initial_balance
-        self.max_shares_per_trade = max_shares_per_trade
+        self.possible_trades = [-100, -50, -25, -10, -5, -1, 0, 1, 5, 10, 25, 50, 100]
 
         # Download stock data from yfinance
         stock_data = yf.download(tickers, start=start, end=end, auto_adjust=True, actions=True)
@@ -22,7 +22,7 @@ class StockTrainingEnv(gym.Env):
         self.splits = {stock: stock_data['Stock Splits'][stock].dropna() for stock in tickers}
 
         # 3 Discrete actions, 0 = hold, 1 = buy, 2 = sell
-        self.action_space = spaces.MultiDiscrete([3, max_shares_per_trade + 1] * self.num_stocks)
+        self.action_space = spaces.MultiDiscrete([len(self.possible_trades) + 1] * self.num_stocks)
 
         # Observation space is the stock prices from the past 30 days and the current balance
         self.observation_space = spaces.Box(low =-np.inf, high=np.inf, shape=([1, self.window_size * self.num_stocks + 1]), dtype=np.float32)
@@ -71,14 +71,11 @@ class StockTrainingEnv(gym.Env):
 
         # Execute actions for each stock
         for i, ticker in enumerate(self.tickers):
-            # Determine action 0 = Hold, 1 = Buy, 2 = Sell
-            action_type = action[i * 2]
-
             # Determine the number of shares to buy or sell
-            num_shares = action[i * 2 + 1]
+            num_shares = action[i]
 
             # Buy
-            if action_type == 1 and num_shares > 0:
+            if num_shares > 0:
                 # Maxmimum amount of stock we can purchase
                 max_afford = self.balance // current_prices[ticker]
 
@@ -88,20 +85,23 @@ class StockTrainingEnv(gym.Env):
                 if shares_to_buy > 0:
                     self.shares_held[ticker] += shares_to_buy
                     self.balance -= shares_to_buy * current_prices[ticker]
+                    reward += 5
                 else:
                     reward -= 5
             
             # Sell
-            elif action_type == 2 and num_shares > 0 and self.shares_held[ticker] > 0:
+            elif num_shares < 0 and self.shares_held[ticker] > 0:
                 shares_to_sell = min(self.shares_held[ticker], num_shares)
                 if shares_to_sell > 0:
                     self.shares_held[ticker] -= shares_to_sell
+                    initial_balance = self.balance
                     self.balance += shares_to_sell * current_prices[ticker]
+                    if initial_balance < self.balance:
+                        reward -= 5
+                    else:
+                        reward += 5
                 else:
-                    reward -= 10
-            
-            else:
-                reward -= 1
+                    reward -= 5
             
         # Move to next step
         self.current_step += 1
