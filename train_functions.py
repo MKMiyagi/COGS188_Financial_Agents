@@ -129,16 +129,10 @@ def evaluate_agent(env, Q, model_name="Agent"):
 from training_env import StockTrainingEnv 
 
 # Create the trading environment
-env = StockTrainingEnv(tickers=["AAPL", "TSLA", "META"], max_shares_per_trade=10)
+env = StockTrainingEnv(tickers=["AAPL", "TSLA", "META"])
 
 # Train Monte Carlo agent
 Q_mc = monte_carlo_train(env, episodes=3000)
 
 # Evaluate Monte Carlo
 evaluate_agent(env, Q_mc, "Monte Carlo Agent")
-
-# Train Q-Learning agent
-# Q_ql = q_learning_train(env, episodes=100)
-
-# Evaluate Q-Learning
-# evaluate_agent(env, Q_ql, "Q-Learning Agent")
