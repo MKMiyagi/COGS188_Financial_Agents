@@ -26,10 +26,13 @@ class StockTrainingEnv(gym.Env):
         self.splits = {stock: stock_data['Stock Splits'][stock].dropna() for stock in tickers}
 
         # 3 Discrete actions, 0 = hold, 1 = buy, 2 = sell
-        self.action_space = spaces.MultiDiscrete([len(self.possible_trades) + 1] * self.num_stocks)
+        self.action_space = spaces.MultiDiscrete([len(self.possible_trades)] * self.num_stocks)
 
         # Observation space is the stock prices from the past 30 days and the current balance
         self.observation_space = spaces.Box(low =-np.inf, high=np.inf, shape=([1, self.window_size * self.num_stocks + 1]), dtype=np.float32)
+
+        self.profits = []
+        self.trade_history = {stock: {"avg_price": 0.0, "shares": 0} for stock in self.tickers}
 
         # Ensure all variables are properly assigned
         self.reset()
@@ -110,7 +113,7 @@ class StockTrainingEnv(gym.Env):
             
             # Sell
             elif num_shares < 0 and self.shares_held[ticker] > 0:
-                shares_to_sell = min(self.shares_held[ticker], num_shares)
+                shares_to_sell = min(self.shares_held[ticker], abs(num_shares))
                 if shares_to_sell > 0:
                     self.shares_held[ticker] -= shares_to_sell
                     self.balance += shares_to_sell * current_prices[ticker]
@@ -119,14 +122,9 @@ class StockTrainingEnv(gym.Env):
                     avg_buy_price = self.trade_history[ticker]["avg_price"]
                     profit = shares_to_sell * (current_prices[ticker] - avg_buy_price)
                     self.profits.append(profit)
-
-                    # Update the trade history with the reduced number of shares
                     self.trade_history[ticker]["shares"] -= shares_to_sell
-                    # Optionally, if all shares are sold, reset the average price
                     if self.trade_history[ticker]["shares"] == 0:
                         self.trade_history[ticker]["avg_price"] = 0.0
-                    
-                    self.profits.append(profit)
 
                     if profit > 0:
                         reward += 5

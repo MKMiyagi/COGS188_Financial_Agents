@@ -16,7 +16,9 @@ def monte_carlo_train(env, episodes=1000, gamma=0.95, lr=0.1):
         done = False
 
         while not done:
-            action = env.action_space.sample()  # Random action (exploration)
+            action = env.action_space.sample() # Random action (exploration)
+            for i in range(len(action)):
+                action[i] = env.possible_trades[action[i]]
             next_state, reward, done, _ = env.step(action)
 
             # Store episode history
