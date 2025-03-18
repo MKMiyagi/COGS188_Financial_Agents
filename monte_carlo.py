@@ -27,19 +27,22 @@ def monte_carlo_train(env, episodes=1000, gamma=0.95, lr=0.1):
 
         # Monte Carlo update: Compute returns and update Q-values
         G = 0  # Return value
+        memory = set()
         for t in reversed(range(len(states))):
             G = gamma * G + rewards[t]
-            if (states[t]) not in Q.keys():
-                Q[states[t]] = {}
-            if (actions[t]) not in Q[states[t]].keys():
-                Q[states[t]][actions[t]] = 0
+            if (states[t], actions[t]) not in memory:
+                memory.add((states[t], actions[t]))
+                if (states[t]) not in Q.keys():
+                    Q[states[t]] = {}
+                if (actions[t]) not in Q[states[t]].keys():
+                    Q[states[t]][actions[t]] = 0
 
-            Q[states[t]][actions[t]] = Q[states[t]][actions[t]] + lr * (G - Q[states[t]][actions[t]])
+                Q[states[t]][actions[t]] = Q[states[t]][actions[t]] + lr * (G - Q[states[t]][actions[t]])
 
     print("Monte Carlo training complete")
     return Q  # Return trained Q-table
 # Evaluate the trained model
-def evaluate_monte_carlo(env, Q, model_name="Monte Carlo Agent"):
+def monte_carlo_eval(env, Q, model_name="Monte Carlo Agent"):
     """ Runs the trained agent on the Gym environment to evaluate performance """
     state = env.reset()
     done = False
