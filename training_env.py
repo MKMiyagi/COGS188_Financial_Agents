@@ -2,6 +2,8 @@ import gymnasium as gym
 import numpy as np
 import yfinance as yf
 from gymnasium import spaces
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
 
 class StockTrainingEnv(gym.Env):
     def __init__(self, tickers=[], start='2014-01-01', end='2024-01-01', initial_balance=10000, window_size=30):
@@ -31,6 +33,11 @@ class StockTrainingEnv(gym.Env):
         # Observation space is the stock prices from the past 30 days and the current balance
         self.observation_space = spaces.Box(low =-np.inf, high=np.inf, shape=([1, self.window_size * self.num_stocks + 1]), dtype=np.float32)
 
+        # Initialize tracking variables
+        self.portfolio_values = []
+        self.balances = []
+        self.stock_holdings = {ticker: [] for ticker in self.tickers}
+        self.timestamps = []
         self.profits = []
         self.trade_history = {stock: {"avg_price": 0.0, "shares": 0} for stock in self.tickers}
 
@@ -47,6 +54,12 @@ class StockTrainingEnv(gym.Env):
         # Initialize trade history and profits
         self.trade_history = {stock: {"avg_price": 0.0, "shares": 0} for stock in self.tickers}
         self.profits = []
+
+        # Reset tracking variables
+        self.portfolio_values = []
+        self.balances = []
+        self.stock_holdings = {ticker: [] for ticker in self.tickers}
+        self.timestamps = []
 
         return self._get_observation()
     
@@ -141,6 +154,14 @@ class StockTrainingEnv(gym.Env):
         # Calculate reward based on portfolio value change
         total_value = self.balance + sum(self.shares_held[stock] * current_prices[stock] for stock in self.tickers)
         reward += (total_value - self.initial_balance) / self.initial_balance * 10
+
+        # Update tracking variables
+        self.portfolio_values.append(total_value)
+        self.balances.append(self.balance)
+        self.timestamps.append(self.current_step)
+        for ticker in self.tickers:
+            self.stock_holdings[ticker].append(self.shares_held[ticker])
+
         return self._get_observation(), reward, self.done, False
 
     '''
@@ -160,3 +181,113 @@ class StockTrainingEnv(gym.Env):
         # Visualize env state at each step
         total_value = self.balance + sum(self.shares_held[t] * self.df.iloc[self.current_step][t] for t in self.tickers)
         print(f"Step: {self.current_step}, Balance: {self.balance}, Total Value: {total_value}, Shares: {self.shares_held}")
+
+    def plot_portfolio_value(self):
+        """Plot portfolio value and cash balance over time"""
+        plt.figure(figsize=(12, 6))
+        plt.plot(self.timestamps, self.portfolio_values, label='Total Portfolio Value', color='blue')
+        plt.plot(self.timestamps, self.balances, label='Cash Balance', color='green', alpha=0.6)
+        
+        plt.title('Portfolio Value Over Time')
+        plt.xlabel('Step')
+        plt.ylabel('Value ($)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        
+    def plot_stock_holdings(self):
+        """Plot number of shares held for each stock"""
+        plt.figure(figsize=(12, 6))
+        for ticker in self.tickers:
+            plt.plot(self.timestamps, self.stock_holdings[ticker], label=f'{ticker} Shares', alpha=0.7)
+        
+        plt.title('Stock Holdings Over Time')
+        plt.xlabel('Step')
+        plt.ylabel('Number of Shares')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        
+    def plot_stock_prices(self):
+        """Plot stock prices over the trading period"""
+        plt.figure(figsize=(12, 6))
+        for ticker in self.tickers:
+            prices = self.df[ticker].iloc[self.timestamps]
+            plt.plot(self.timestamps, prices, label=f'{ticker} Price', alpha=0.7)
+        
+        plt.title('Stock Prices Over Time')
+        plt.xlabel('Step')
+        plt.ylabel('Price ($)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        
+    def plot_all_metrics(self):
+        """Plot all metrics in a single figure with subplots"""
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
+        
+        # Portfolio Value
+        ax1.plot(self.timestamps, self.portfolio_values, label='Total Portfolio Value', color='blue')
+        ax1.plot(self.timestamps, self.balances, label='Cash Balance', color='green', alpha=0.6)
+        ax1.set_title('Portfolio Value Over Time')
+        ax1.set_xlabel('Step')
+        ax1.set_ylabel('Value ($)')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # Stock Holdings
+        for ticker in self.tickers:
+            ax2.plot(self.timestamps, self.stock_holdings[ticker], label=f'{ticker} Shares', alpha=0.7)
+        ax2.set_title('Stock Holdings Over Time')
+        ax2.set_xlabel('Step')
+        ax2.set_ylabel('Number of Shares')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        # Stock Prices
+        for ticker in self.tickers:
+            prices = self.df[ticker].iloc[self.timestamps]
+            ax3.plot(self.timestamps, prices, label=f'{ticker} Price', alpha=0.7)
+        ax3.set_title('Stock Prices Over Time')
+        ax3.set_xlabel('Step')
+        ax3.set_ylabel('Price ($)')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.show()
+        
+    def get_summary_stats(self):
+        """Calculate and return summary statistics"""
+        if not self.portfolio_values:
+            return "No trading data available yet."
+            
+        initial_value = self.portfolio_values[0]
+        final_value = self.portfolio_values[-1]
+        returns = (final_value - initial_value) / initial_value * 100
+        
+        # Calculate daily returns
+        daily_returns = np.diff(self.portfolio_values) / self.portfolio_values[:-1]
+        
+        # Calculate Sharpe Ratio (assuming risk-free rate of 0.01)
+        risk_free_rate = 0.01
+        excess_returns = daily_returns - risk_free_rate/252  # Daily risk-free rate
+        sharpe_ratio = np.sqrt(252) * np.mean(excess_returns) / np.std(excess_returns)
+        
+        # Calculate Maximum Drawdown
+        peak = self.portfolio_values[0]
+        max_drawdown = 0
+        for value in self.portfolio_values:
+            if value > peak:
+                peak = value
+            drawdown = (peak - value) / peak
+            max_drawdown = max(max_drawdown, drawdown)
+        
+        return {
+            'Initial Value': initial_value,
+            'Final Value': final_value,
+            'Total Return (%)': returns,
+            'Sharpe Ratio': sharpe_ratio,
+            'Max Drawdown (%)': max_drawdown * 100,
+            'Total Profits': sum(self.profits)
+        }

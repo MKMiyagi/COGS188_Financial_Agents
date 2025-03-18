@@ -19,7 +19,7 @@ class ActorCriticNetwork(nn.Module):
     """
     Combined actor-critic network for A2C algorithm
     """
-    def __init__(self, input_dim, n_actions, hidden_dim=128):
+    def __init__(self, input_dim, n_actions, num_stocks, hidden_dim=128):
         super(ActorCriticNetwork, self).__init__()
         
         # Shared feature extractor
@@ -30,12 +30,14 @@ class ActorCriticNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # Policy head (actor)
-        self.policy = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, n_actions)
-        )
+        # Separate policy heads for each stock
+        self.policy_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, n_actions)
+            ) for _ in range(num_stocks)
+        ])
         
         # Value head (critic)
         self.value = nn.Sequential(
@@ -48,7 +50,8 @@ class ActorCriticNetwork(nn.Module):
     
     def forward(self, x):
         features = self.shared(x)
-        action_probs = F.softmax(self.policy(features), dim=-1)
+        # Get separate action probabilities for each stock
+        action_probs = [F.softmax(head(features), dim=-1) for head in self.policy_heads]
         state_values = self.value(features)
         return action_probs, state_values
 
@@ -71,27 +74,30 @@ class A2CAgent:
         self.actions_per_stock = env.action_space.nvec[0]
         
         # Initialize the actor-critic network
-        self.model = ActorCriticNetwork(self.input_dim, self.actions_per_stock).to(device)
+        self.model = ActorCriticNetwork(self.input_dim, self.actions_per_stock, self.num_stocks).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
     
     def select_action(self, state, training=True):
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
         action_probs, _ = self.model(state_tensor)
         
-        # Create a categorical distribution over the action probabilities
-        dist = Categorical(action_probs)
+        actions = []
+        log_probs = []
+        entropies = []
         
-        if training:
-            # Sample an action during training
-            action_idx = dist.sample()
-        else:
-            # Choose the most probable action during evaluation
-            action_idx = torch.argmax(action_probs)
+        # Sample actions for each stock independently
+        for stock_probs in action_probs:
+            dist = Categorical(stock_probs)
+            if training:
+                action = dist.sample()
+            else:
+                action = torch.argmax(stock_probs)
+            
+            actions.append(self.env.possible_trades[action.item()])
+            log_probs.append(dist.log_prob(action))
+            entropies.append(dist.entropy())
         
-        # Convert the single action index to a vector of actions
-        action = [action_idx.item()] * self.num_stocks
-        
-        return action, dist.log_prob(action_idx), dist.entropy()
+        return actions, torch.stack(log_probs), torch.stack(entropies)
     
 def a2c_train(env, agent, n_episodes=1000, max_steps=200):
     episode_rewards = []
@@ -121,32 +127,39 @@ def a2c_train(env, agent, n_episodes=1000, max_steps=200):
             # Get action probabilities and state value
             action_probs, state_value = agent.model(state_tensor)
             
-            # Sample action
-            dist = Categorical(action_probs)
-            action_idx = dist.sample()
-            log_prob = dist.log_prob(action_idx)
-            entropy = dist.entropy()
+            # Initialize lists for this step
+            step_actions = []
+            step_log_probs = []
+            step_entropies = []
             
-            # Convert to action vector for the environment
-            action = [action_idx.item()] * agent.num_stocks
+            # Sample actions for each stock
+            for stock_idx, stock_probs in enumerate(action_probs):
+                dist = Categorical(stock_probs)
+                action_idx = dist.sample()
+                step_actions.append(action_idx.item())
+                step_log_probs.append(dist.log_prob(action_idx))
+                step_entropies.append(dist.entropy())
+            
+            # Convert actions to trade amounts using possible_trades
+            actions = [env.possible_trades[idx] for idx in step_actions]
             
             # Take action in the environment
-            next_state, reward, terminated, truncated = env.step(action)
+            next_state, reward, terminated, truncated = env.step(actions)
             done = terminated or truncated
             
             # Store step data
-            log_probs.append(log_prob)
+            log_probs.append(torch.stack(step_log_probs).mean())  # Average log probs across stocks
             values.append(state_value)
             rewards.append(reward)
-            entropies.append(entropy)
+            entropies.append(torch.stack(step_entropies).mean())  # Average entropy across stocks
             
             # Update state and counters
             state = next_state
             episode_reward += reward
             step += 1
         
-        # Convert lists to tensors first
-        log_probs = torch.cat(log_probs)
+        # Convert lists to tensors
+        log_probs = torch.stack(log_probs)
         values = torch.cat(values).squeeze()
         entropies = torch.stack(entropies)
         
