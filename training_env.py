@@ -11,7 +11,11 @@ class StockTrainingEnv(gym.Env):
         self.tickers = tickers
         self.window_size = window_size
         self.initial_balance = initial_balance
-        self.possible_trades = [-100, -50, -25, -10, -5, -1, 0, 1, 5, 10, 25, 50, 100]
+        self.possible_trades = [
+            -1, -5, -10, -25, -50, -100, # Sell
+            0, # Hold
+            1, 5, 10, 25, 50, 100 # Buy
+        ]
 
         # Download stock data from yfinance
         stock_data = yf.download(tickers, start=start, end=end, auto_adjust=True, actions=True)
@@ -37,7 +41,7 @@ class StockTrainingEnv(gym.Env):
         self.current_step = self.window_size
         self.done = False
 
-        return self._get_observation(), {}
+        return self._get_observation()
     
     def stock_split(self):
         for stock in self.tickers:
@@ -60,7 +64,7 @@ class StockTrainingEnv(gym.Env):
     def step(self, action):
         # Check if the episode has ended
         if self.done:
-            return self._get_observation(), 0, True, False, {}
+            return self._get_observation(), 0, True, False
         
         # Adjust for Stock Splits
         self.stock_split()
@@ -82,6 +86,8 @@ class StockTrainingEnv(gym.Env):
                 # Limit the amount of shares we can buy
                 shares_to_buy = min(max_afford, num_shares)
 
+                if shares_to_buy < num_shares:
+                    reward -= 3
                 if shares_to_buy > 0:
                     self.shares_held[ticker] += shares_to_buy
                     self.balance -= shares_to_buy * current_prices[ticker]
@@ -110,8 +116,8 @@ class StockTrainingEnv(gym.Env):
         
         # Calculate reward based on portfolio value change
         total_value = self.balance + sum(self.shares_held[stock] * current_prices[stock] for stock in self.tickers)
-        reward += total_value - self.initial_balance
-        return self._get_observation(), reward, self.done, False, {}
+        reward += (total_value - self.initial_balance) / self.initial_balance * 10
+        return self._get_observation(), reward, self.done, False
 
     '''
     Return the observation of the environment
