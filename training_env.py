@@ -41,6 +41,10 @@ class StockTrainingEnv(gym.Env):
         self.current_step = self.window_size
         self.done = False
 
+        # Initialize trade history and profits
+        self.trade_history = {stock: {"avg_price": 0.0, "shares": 0} for stock in self.tickers}
+        self.profits = []
+
         return self._get_observation()
     
     def stock_split(self):
@@ -71,7 +75,7 @@ class StockTrainingEnv(gym.Env):
 
         # Find current prices of stocks
         current_prices = self.df.iloc[self.current_step]
-        reward = 0
+        reward = 0  
 
         # Execute actions for each stock
         for i, ticker in enumerate(self.tickers):
@@ -91,6 +95,15 @@ class StockTrainingEnv(gym.Env):
                 if shares_to_buy > 0:
                     self.shares_held[ticker] += shares_to_buy
                     self.balance -= shares_to_buy * current_prices[ticker]
+
+                    # Update weighted average purchase price
+                    prev_shares = self.trade_history[ticker]["shares"]
+                    prev_avg = self.trade_history[ticker]["avg_price"]
+                    new_total_shares = prev_shares + shares_to_buy
+                    new_avg = (prev_shares * prev_avg + shares_to_buy * current_prices[ticker]) / new_total_shares if new_total_shares > 0 else current_prices[ticker]
+                    self.trade_history[ticker]["shares"] = new_total_shares
+                    self.trade_history[ticker]["avg_price"] = new_avg
+
                     reward += 5
                 else:
                     reward -= 5
@@ -100,12 +113,25 @@ class StockTrainingEnv(gym.Env):
                 shares_to_sell = min(self.shares_held[ticker], num_shares)
                 if shares_to_sell > 0:
                     self.shares_held[ticker] -= shares_to_sell
-                    initial_balance = self.balance
                     self.balance += shares_to_sell * current_prices[ticker]
-                    if initial_balance < self.balance:
-                        reward -= 5
-                    else:
+                    
+                    # Calculate profit using the average cost basis
+                    avg_buy_price = self.trade_history[ticker]["avg_price"]
+                    profit = shares_to_sell * (current_prices[ticker] - avg_buy_price)
+                    self.profits.append(profit)
+
+                    # Update the trade history with the reduced number of shares
+                    self.trade_history[ticker]["shares"] -= shares_to_sell
+                    # Optionally, if all shares are sold, reset the average price
+                    if self.trade_history[ticker]["shares"] == 0:
+                        self.trade_history[ticker]["avg_price"] = 0.0
+                    
+                    self.profits.append(profit)
+
+                    if profit > 0:
                         reward += 5
+                    else:
+                        reward -= 2
                 else:
                     reward -= 5
             

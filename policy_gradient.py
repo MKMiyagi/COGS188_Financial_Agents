@@ -101,7 +101,13 @@ class PolicyGradientAgent:
         self.policy_net.load_state_dict(torch.load(path))
 
 def train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001):
-    for episode in tqdm(range(episodes), desc="Training Policy Gradient"):
+    # Create a progress bar with iteration speed
+    pbar = tqdm(
+        range(episodes), 
+        desc="Training Policy Gradient",
+    )
+    
+    for episode in pbar:
         state = env.reset()
         done = False
         episode_reward = 0
@@ -114,27 +120,32 @@ def train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001):
             state = next_state
             episode_reward += reward
             num_steps += 1
+        
         agent.update_policy()
         
-        if episode % 10 == 0:
-            print(f"Episode {episode}, Total Reward: {episode_reward}, Avg Reward: {episode_reward / num_steps}")
+        # Update progress bar with current reward and average reward
+        avg_reward = episode_reward / num_steps if num_steps > 0 else 0
+        pbar.set_postfix({
+            'total_reward': f'{episode_reward:.2f}',
+            'avg_reward': f'{avg_reward:.2f}'
+        })
 
     agent.save_model("policy_gradient_model.pth")
 
 # Initialize environment and agent
-env = StockTrainingEnv(tickers=["AAPL", "TSLA", "META"])
+# env = StockTrainingEnv(tickers=["AAPL", "TSLA", "META"])
 
-# Define dimensions for the agent
-state_dim = env.observation_space.shape[1]
-num_tickers = len(env.tickers)
-possible_trades = env.possible_trades
+# # Define dimensions for the agent
+# state_dim = env.observation_space.shape[1]
+# num_tickers = len(env.tickers)
+# possible_trades = env.possible_trades
 
-# Create agent
-agent = PolicyGradientAgent(
-    state_dim=state_dim,
-    num_tickers=num_tickers,
-    possible_trades=possible_trades
-)
+# # Create agent
+# agent = PolicyGradientAgent(
+#     state_dim=state_dim,
+#     num_tickers=num_tickers,
+#     possible_trades=possible_trades
+# )
 
-# Train agent
-train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001)
+# # Train agent
+# train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001)

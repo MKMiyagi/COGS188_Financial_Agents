@@ -93,7 +93,7 @@ class A2CAgent:
         
         return action, dist.log_prob(action_idx), dist.entropy()
     
-def train(env, agent, n_episodes=1000, max_steps=200):
+def a2c_train(env, agent, n_episodes=1000, max_steps=200):
     episode_rewards = []
     
     # Create a progress bar with iteration speed
@@ -191,7 +191,7 @@ def train(env, agent, n_episodes=1000, max_steps=200):
     torch.save(agent.model.state_dict(), "a2c_model_final.pth")
     return episode_rewards
 
-def evaluate(env, agent, n_episodes=10):
+def a2c_eval(env, agent, n_episodes=10):
     """Evaluate the trained agent"""
     total_rewards = []
     
