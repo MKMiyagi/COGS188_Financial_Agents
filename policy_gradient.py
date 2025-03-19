@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.distributions import Categorical
 from collections import deque
 from tqdm import tqdm
 from training_env import StockTrainingEnv
@@ -10,41 +11,54 @@ from training_env import StockTrainingEnv
 class PolicyNetwork(nn.Module):
     def __init__(self, input_dim, num_tickers, num_actions, hidden_dim=128):
         super(PolicyNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
+        )
         
         # Create separate output layers for each ticker
         self.action_heads = nn.ModuleList([
-            nn.Linear(hidden_dim, num_actions) for _ in range(num_tickers)
+            nn.Sequential(
+                nn.Linear(hidden_dim, num_actions)
+            ) for _ in range(num_tickers)
         ])
         
-        self.softmax = nn.Softmax(dim=-1)
         self.num_tickers = num_tickers
         self.num_actions = num_actions
 
     def forward(self, state):
-        x = torch.relu(self.fc1(state))
-        x = torch.relu(self.fc2(x))
+        x = self.network(state)
         
         # Get action probabilities for each ticker
         action_probs = []
         for i in range(self.num_tickers):
-            action_probs.append(self.softmax(self.action_heads[i](x)))
+            action_probs.append(nn.functional.softmax(self.action_heads[i](x), dim=-1))
             
         return action_probs  # List of probability distributions for each ticker
 
 # Policy Gradient Algorithm (REINFORCE)
 class PolicyGradientAgent:
-    def __init__(self, state_dim, num_tickers, possible_trades, lr=0.001, gamma=0.99):
+    def __init__(self, env, lr=0.001, gamma=0.99):
+        self.env = env
         self.gamma = gamma
         self.memory = deque(maxlen=5000)  # Store trajectories
-        self.num_tickers = num_tickers
-        self.possible_trades = possible_trades
-        num_actions = len(self.possible_trades)  # Fixed: each ticker has its own probability distribution over actions
-        self.policy_net = PolicyNetwork(state_dim, num_tickers, num_actions)
+        self.possible_trades = env.possible_trades
+        self.num_actions = env.action_space.nvec[0]
+        self.num_tickers = len(env.tickers)
+
+        # Get observation space and action space dimensions
+        if hasattr(env.observation_space, 'shape'):
+            self.input_dim = np.prod(env.observation_space.shape)
+        else:
+            # Handle other observation space types as needed
+            self.input_dim = env.observation_space.shape[0]
+
+        self.policy_net = PolicyNetwork(self.input_dim, self.num_tickers, self.num_actions)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
 
-    def select_action(self, state):
+    def select_action(self, state, training=True):
         state = torch.tensor(state, dtype=torch.float32)
         action_probs_list = self.policy_net(state)
         
@@ -53,13 +67,15 @@ class PolicyGradientAgent:
         
         # For each ticker, sample an action from its probability distribution
         for ticker_probs in action_probs_list:
-            probs = ticker_probs.detach().numpy()
-            action_idx = np.random.choice(len(probs), p=probs)
+            dist = Categorical(ticker_probs)
+            if training:
+                action = dist.sample()
+            else:
+                action = torch.argmax(ticker_probs)
             
             # Convert action index to actual trade value from possible_trades
-            action_value = self.possible_trades[action_idx]
-            actions.append(action_value)
-            action_probs.append(ticker_probs[action_idx])
+            actions.append(self.env.possible_trades[action.item()])
+            action_probs.append(dist.log_prob(action))
             
         return actions, action_probs
 
@@ -83,7 +99,7 @@ class PolicyGradientAgent:
 
         for (state, action_probs, _), G in zip(self.memory, returns):
             # Sum up log probabilities of each ticker's action
-            episode_loss = sum([-torch.log(prob) * G for prob in action_probs])
+            episode_loss = sum([-prob * G for prob in action_probs])
             policy_loss.append(episode_loss)
 
         # Backpropagation
@@ -100,7 +116,7 @@ class PolicyGradientAgent:
     def load_model(self, path="policy_gradient_model.pth"):
         self.policy_net.load_state_dict(torch.load(path))
 
-def train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001):
+def policy_gradient_train(env, agent, episodes=1000, gamma=0.99, lr=0.001):
     # Create a progress bar with iteration speed
     pbar = tqdm(
         range(episodes), 
@@ -114,7 +130,7 @@ def train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001):
         num_steps = 0
         
         while not done:
-            actions, action_probs = agent.select_action(state)
+            actions, action_probs = agent.select_action(state, training=True)
             next_state, reward, done, _ = env.step(actions)
             agent.store_transition((state, action_probs, reward))
             state = next_state
@@ -132,7 +148,40 @@ def train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001):
 
     agent.save_model("policy_gradient_model.pth")
 
-# Initialize environment and agent
+def policy_gradient_eval(env, agent, n_episodes=10):
+    """Evaluate the trained agent"""
+    total_rewards = []
+    
+    # Create a progress bar for evaluation with iteration speed
+    pbar = tqdm(
+        range(n_episodes), 
+        desc="Evaluating Policy Gradient Agent",
+    )
+    
+    for _ in pbar:
+        state = env.reset()
+        done = False
+        episode_reward = 0
+        
+        while not done:
+            # Select action without exploration
+            action, _ = agent.select_action(state, training=False)
+            
+            # Take action in the environment
+            next_state, reward, terminated, truncated = env.step(action)
+            done = terminated or truncated
+            
+            # Update state and reward
+            state = next_state
+            episode_reward += reward
+        
+        total_rewards.append(episode_reward)
+        
+        # Update progress bar
+        pbar.set_postfix({'reward': f'{episode_reward:.2f}'})
+    env.render()
+
+# # Initialize environment and agent
 # env = StockTrainingEnv(tickers=["AAPL", "TSLA", "META"])
 
 # # Define dimensions for the agent
@@ -148,4 +197,8 @@ def train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001):
 # )
 
 # # Train agent
-# train_policy_gradient(env, agent, episodes=1000, gamma=0.99, lr=0.001)
+# policy_gradient_train(env, agent, episodes=100, gamma=0.99, lr=0.001)
+
+# print(env.profits)
+
+# policy_gradient_eval(env, agent)
