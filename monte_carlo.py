@@ -58,7 +58,6 @@ def monte_carlo_eval(env, Q, model_name="Monte Carlo Agent"):
         if len(all_possible_actions) == 0:
             # If the state is not in the Q-table, take a random action
             action = env.action_space.sample()
-            print(f"Taking random action on step {step}")
         else:
             # Select the action with the highest Q-value
             action = max(all_possible_actions.keys(), key=lambda a: all_possible_actions[a])
@@ -73,7 +72,5 @@ def monte_carlo_eval(env, Q, model_name="Monte Carlo Agent"):
 
         step += 1
 
-    print(f"{model_name} Results:")
     env.render()
-    print(f"{model_name} Final Portfolio Value: {total_reward:.2f}")
     return total_reward
