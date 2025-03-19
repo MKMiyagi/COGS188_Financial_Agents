@@ -65,11 +65,7 @@ def monte_carlo_eval(env, Q, model_name="Monte Carlo Agent"):
         next_state, reward, done, _ = env.step(action)
         total_reward += reward
         state = next_state
-
-        # Display results every 20 steps
-        if step % 20 == 0:
-            env.render()
-
+        
         step += 1
 
     env.render()
