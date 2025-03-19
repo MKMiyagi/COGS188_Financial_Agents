@@ -4,6 +4,7 @@ import yfinance as yf
 from gymnasium import spaces
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
+import pandas as pd
 
 class StockTrainingEnv(gym.Env):
     def __init__(self, tickers=[], start='2014-01-01', end='2024-01-01', initial_balance=10000, window_size=30):
@@ -196,16 +197,32 @@ class StockTrainingEnv(gym.Env):
         plt.show()
         
     def plot_stock_holdings(self):
-        """Plot number of shares held for each stock"""
+        """Plot number of shares held for each stock on a monthly basis"""
         plt.figure(figsize=(12, 6))
-        for ticker in self.tickers:
-            plt.plot(self.timestamps, self.stock_holdings[ticker], label=f'{ticker} Shares', alpha=0.7)
         
-        plt.title('Stock Holdings Over Time')
-        plt.xlabel('Step')
+        # Convert timestamps to datetime if they aren't already
+        dates = pd.to_datetime(self.df.index[self.timestamps])
+        
+        # Create a DataFrame with the holdings data
+        holdings_df = pd.DataFrame(self.stock_holdings, index=dates)
+        
+        # Resample to monthly frequency and plot
+        monthly_holdings = holdings_df.resample('M').last()
+        
+        for ticker in self.tickers:
+            plt.plot(monthly_holdings.index, monthly_holdings[ticker], 
+                    label=f'{ticker} Shares', alpha=0.7, marker='o')
+        
+        plt.title('Monthly Stock Holdings Over Time')
+        plt.xlabel('Date')
         plt.ylabel('Number of Shares')
         plt.legend()
         plt.grid(True, alpha=0.3)
+        
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45)
+        
+        plt.tight_layout()
         plt.show()
         
     def plot_stock_prices(self):
@@ -235,14 +252,20 @@ class StockTrainingEnv(gym.Env):
         ax1.legend()
         ax1.grid(True, alpha=0.3)
         
-        # Stock Holdings
+        # Stock Holdings (Monthly)
+        dates = pd.to_datetime(self.df.index[self.timestamps])
+        holdings_df = pd.DataFrame(self.stock_holdings, index=dates)
+        monthly_holdings = holdings_df.resample('M').last()
+        
         for ticker in self.tickers:
-            ax2.plot(self.timestamps, self.stock_holdings[ticker], label=f'{ticker} Shares', alpha=0.7)
-        ax2.set_title('Stock Holdings Over Time')
-        ax2.set_xlabel('Step')
+            ax2.plot(monthly_holdings.index, monthly_holdings[ticker], 
+                    label=f'{ticker} Shares', alpha=0.7, marker='o')
+        ax2.set_title('Monthly Stock Holdings Over Time')
+        ax2.set_xlabel('Date')
         ax2.set_ylabel('Number of Shares')
         ax2.legend()
         ax2.grid(True, alpha=0.3)
+        ax2.tick_params(axis='x', rotation=45)
         
         # Stock Prices
         for ticker in self.tickers:
@@ -284,10 +307,10 @@ class StockTrainingEnv(gym.Env):
             max_drawdown = max(max_drawdown, drawdown)
         
         return {
-            'Initial Value': initial_value,
-            'Final Value': final_value,
-            'Total Return (%)': returns,
-            'Sharpe Ratio': sharpe_ratio,
-            'Max Drawdown (%)': max_drawdown * 100,
-            'Total Profits': sum(self.profits)
+            'Initial Value': int(initial_value),
+            'Final Value': float(final_value),
+            'Total Return (%)': float(returns),
+            'Sharpe Ratio': float(sharpe_ratio),
+            'Max Drawdown (%)': float(max_drawdown * 100),
+            'Total Profits': int(sum(self.profits))
         }
